@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HardLink Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 30px;
+        }
+
+        h1 {
+            color: #667eea;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 2.5em;
+        }
+
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .section h2 {
+            color: #495057;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        .file-browser {
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            background: white;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .file-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+        }
+
+        .file-item:hover {
+            background: #e9ecef;
+            transform: translateX(5px);
+        }
+
+        .file-item.selected {
+            background: #667eea;
+            color: white;
+        }
+
+        .file-icon {
+            margin-right: 10px;
+            font-size: 1.2em;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: bold;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:disabled {
+            background: #dee2e6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 5px;
+        }
+
+        .breadcrumb {
+            padding: 10px;
+            background: #e9ecef;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            font-family: monospace;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 HardLink Manager</h1>
+
+        <div class="info-box">
+            <strong>ℹ️ Info:</strong> Les hard links ne fonctionnent que sur le même système de fichiers (même disque).
+        </div>
+
+        <div class="section">
+            <h2>📁 1. Sélectionner le fichier source</h2>
+            <div class="breadcrumb" id="sourcePath">Parcourir...</div>
+            <div class="file-browser" id="sourceBrowser">
+                <p>Chargement...</p>
+            </div>
+            <input type="text" id="sourceInput" placeholder="Ou entrez le chemin complet du fichier source" style="margin-top: 10px;">
+        </div>
+
+        <div class="section">
+            <h2>📂 2. Destination du hard link</h2>
+            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                <div class="breadcrumb" id="destPath" style="flex: 1; margin-bottom: 0;">Parcourir...</div>
+                <button class="btn btn-primary" onclick="selectCurrentDestDir()" style="padding: 8px 15px; font-size: 0.9em;">
+                    ✓ Sélectionner ce dossier
+                </button>
+            </div>
+            <div class="file-browser" id="destBrowser">
+                <p>Chargement...</p>
+            </div>
+            <input type="text" id="destinationInput" placeholder="Répertoire de destination" value="{{ default_dest }}" style="margin-top: 10px;">
+            <p style="margin-top: 10px; color: #6c757d; font-size: 0.9em;">
+                💡 Naviguez dans les dossiers et cliquez sur "✓ Sélectionner ce dossier", ou modifiez le chemin directement. Le nom du fichier source sera utilisé automatiquement.
+            </p>
+            <div id="finalPath" style="margin-top: 10px; padding: 10px; background: #e7f3ff; border-radius: 5px; font-family: monospace; display: none;">
+                <strong>Chemin final :</strong> <span id="finalPathText"></span>
+            </div>
+        </div>
+
+        <div class="button-group">
+            <button class="btn btn-primary" id="createBtn" onclick="createHardLink()">
+                🔗 Créer le Hard Link
+            </button>
+        </div>
+
+        <div id="message" class="message"></div>
+    </div>
+
+    <script>
+        // Détection automatique du base path
+        const basePath = window.location.pathname.replace(/\/$/, '');
+
+        let currentSourcePath = '/';
+        let currentDestPath = '/';
+        let selectedFile = null;
+        let selectedDestDir = '{{ default_dest }}';
+
+        async function loadSourceDirectory(path) {
+            try {
+                const response = await fetch(`${basePath}/api/browse?path=${encodeURIComponent(path)}`);
+                const items = await response.json();
+
+                const browser = document.getElementById('sourceBrowser');
+                browser.innerHTML = '';
+
+                if (path !== '/') {
+                    const parentItem = document.createElement('div');
+                    parentItem.className = 'file-item';
+                    parentItem.innerHTML = '<span class="file-icon">⬆️</span> .. (Dossier parent)';
+                    parentItem.onclick = () => {
+                        const parentPath = path.split('/').slice(0, -1).join('/') || '/';
+                        loadSourceDirectory(parentPath);
+                    };
+                    browser.appendChild(parentItem);
+                }
+
+                items.forEach(item => {
+                    const itemDiv = document.createElement('div');
+                    itemDiv.className = 'file-item';
+                    const icon = item.type === 'directory' ? '📁' : '📄';
+                    const sizeInfo = item.size ? ` (${formatSize(item.size)})` : '';
+                    itemDiv.innerHTML = `<span class="file-icon">${icon}</span> ${item.name}${sizeInfo}`;
+
+                    itemDiv.onclick = () => {
+                        if (item.type === 'directory') {
+                            loadSourceDirectory(item.path);
+                        } else {
+                            selectFile(item.path, itemDiv);
+                        }
+                    };
+
+                    browser.appendChild(itemDiv);
+                });
+
+                currentSourcePath = path;
+                document.getElementById('sourcePath').textContent = path;
+
+            } catch (error) {
+                console.error('Error loading source directory:', error);
+                showMessage('Erreur lors du chargement du répertoire', 'error');
+            }
+        }
+
+        async function loadDestDirectory(path) {
+            try {
+                const response = await fetch(`${basePath}/api/browse?path=${encodeURIComponent(path)}`);
+                const items = await response.json();
+
+                const browser = document.getElementById('destBrowser');
+                browser.innerHTML = '';
+
+                if (path !== '/') {
+                    const parentItem = document.createElement('div');
+                    parentItem.className = 'file-item';
+                    parentItem.innerHTML = '<span class="file-icon">⬆️</span> .. (Dossier parent)';
+                    parentItem.onclick = () => {
+                        const parentPath = path.split('/').slice(0, -1).join('/') || '/';
+                        loadDestDirectory(parentPath);
+                    };
+                    browser.appendChild(parentItem);
+                }
+
+                items.forEach(item => {
+                    if (item.type === 'directory') {
+                        const itemDiv = document.createElement('div');
+                        itemDiv.className = 'file-item';
+                        itemDiv.innerHTML = `<span class="file-icon">📁</span> ${item.name}`;
+
+                        itemDiv.onclick = () => {
+                            loadDestDirectory(item.path);
+                        };
+
+                        // Double click to select
+                        itemDiv.ondblclick = () => {
+                            selectDestDir(item.path);
+                        };
+
+                        browser.appendChild(itemDiv);
+                    }
+                });
+
+                currentDestPath = path;
+                document.getElementById('destPath').textContent = path;
+
+            } catch (error) {
+                console.error('Error loading dest directory:', error);
+                showMessage('Erreur lors du chargement du répertoire', 'error');
+            }
+        }
+
+        function selectFile(path, element) {
+            document.querySelectorAll('#sourceBrowser .file-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+
+            element.classList.add('selected');
+            selectedFile = path;
+            document.getElementById('sourceInput').value = path;
+            updateFinalPath();
+        }
+
+        function selectDestDir(path) {
+            selectedDestDir = path;
+            document.getElementById('destinationInput').value = path;
+            updateFinalPath();
+            showMessage(`📂 Répertoire de destination sélectionné: ${path}`, 'success');
+        }
+
+        function selectCurrentDestDir() {
+            if (currentDestPath && currentDestPath !== '/') {
+                selectDestDir(currentDestPath);
+            } else {
+                showMessage('⚠️ Veuillez naviguer vers un répertoire valide', 'error');
+            }
+        }
+
+        function updateFinalPath() {
+            if (selectedFile && selectedDestDir) {
+                const filename = selectedFile.split('/').pop();
+                const finalPath = selectedDestDir + '/' + filename;
+                document.getElementById('finalPathText').textContent = finalPath;
+                document.getElementById('finalPath').style.display = 'block';
+            }
+        }
+
+        async function createHardLink() {
+            const source = document.getElementById('sourceInput').value;
+            const destDir = document.getElementById('destinationInput').value;
+
+            if (!source || !destDir) {
+                showMessage('Veuillez sélectionner un fichier source et un répertoire de destination', 'error');
+                return;
+            }
+
+            // Construct full destination path
+            const filename = source.split('/').pop();
+            const destination = destDir + '/' + filename;
+
+            const btn = document.getElementById('createBtn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Création en cours...';
+
+            try {
+                const response = await fetch(`${basePath}/api/create_hardlink`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ source, destination })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    showMessage(`✅ Hard link créé avec succès! Inode: ${result.inode}, Liens: ${result.link_count}`, 'success');
+                } else {
+                    showMessage(`❌ Erreur: ${result.error}`, 'error');
+                }
+
+            } catch (error) {
+                showMessage(`❌ Erreur: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '🔗 Créer le Hard Link';
+            }
+        }
+
+        function showMessage(text, type) {
+            const msg = document.getElementById('message');
+            msg.textContent = text;
+            msg.className = `message ${type}`;
+            msg.style.display = 'block';
+
+            setTimeout(() => {
+                msg.style.display = 'none';
+            }, 5000);
+        }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+        }
+
+        // Écouteur pour le champ de destination
+        document.getElementById('destinationInput').addEventListener('input', function() {
+            selectedDestDir = this.value;
+            updateFinalPath();
+        });
+
+        // Écouteur pour le champ source
+        document.getElementById('sourceInput').addEventListener('input', function() {
+            selectedFile = this.value;
+            updateFinalPath();
+        });
+
+        // Load directories on page load
+        loadSourceDirectory('/');
+        loadDestDirectory('/');
+    </script>
+</body>
+</html>

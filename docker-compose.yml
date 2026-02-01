@@ -1,0 +1,16 @@
+services:
+  hardlink-manager:
+    build: .
+    container_name: hardlink-manager
+    ports:
+      - "5050:5000"
+    volumes:
+      - /mnt/Stockage:/mnt/Stockage
+      - /mnt/Stockage2:/mnt/Stockage2
+    restart: unless-stopped
+    networks:
+      - gateway-network
+
+networks:
+  gateway-network:
+    external: true
