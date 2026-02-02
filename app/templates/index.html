@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HardLink Manager</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔗</text></svg>">
     <style>
         * {
             margin: 0;
@@ -167,7 +168,10 @@
 </head>
 <body>
     <div class="container">
-        <h1>🔗 HardLink Manager</h1>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+            <h1>🔗 HardLink Manager</h1>
+            <a href="#" id="settingsLink" class="btn btn-primary" style="padding:8px 12px">⚙️ Réglages</a>
+        </div>
 
         <div class="info-box">
             <strong>ℹ️ Info:</strong> Les hard links ne fonctionnent que sur le même système de fichiers (même disque).
@@ -214,6 +218,9 @@
     <script>
         // Détection automatique du base path
         const basePath = window.location.pathname.replace(/\/$/, '');
+
+        // Définir le lien vers les réglages dynamiquement
+        document.getElementById('settingsLink').href = basePath + '/settings';
 
         let currentSourcePath = '/';
         let currentDestPath = '/';

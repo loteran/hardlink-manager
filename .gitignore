@@ -1,30 +1,15 @@
+# Python
 __pycache__/
 *.py[cod]
-*.class
+*$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-.env
-.venv
 venv/
-ENV/
-.idea/
+.env
+
+# IDE
 .vscode/
-*.swp
-*.swo
-*~
-.DS_Store
+.idea/
+
+# Local settings (user-specific)
+app/settings.json

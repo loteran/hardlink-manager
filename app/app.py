@@ -1,157 +1,130 @@
 #!/usr/bin/env python3
-"""
-HardLink Manager - Web interface for creating hard links
-"""
-
-from flask import Flask, render_template, request, jsonify
-import os
-import subprocess
+from flask import Flask, render_template, request, jsonify, redirect, url_for
+import os, json
 from pathlib import Path
 
 app = Flask(__name__)
+SETTINGS_FILE = Path(__file__).parent / 'settings.json'
+DEFAULT_SETTINGS = {'base_paths': ['/mnt/Stockage', '/mnt/Stockage2'], 'default_dest': '/mnt/Stockage/Downloads'}
 
-# Configuration
-BASE_PATHS = [
-    '/mnt/Stockage',
-    '/mnt/Stockage2'
-]
+def load_settings():
+    try:
+        if SETTINGS_FILE.exists():
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return DEFAULT_SETTINGS
+    except:
+        return DEFAULT_SETTINGS
 
-DEFAULT_DESTINATION = '/mnt/Stockage/Downloads'
+settings = load_settings()
+BASE_PATHS = settings.get('base_paths', DEFAULT_SETTINGS['base_paths'])
+DEFAULT_DESTINATION = settings.get('default_dest', DEFAULT_SETTINGS['default_dest'])
 
 def get_directory_tree(path, max_depth=3, current_depth=0):
-    """Get directory tree structure"""
     if current_depth >= max_depth:
         return []
-
     try:
         items = []
-        # Get all items and sort them properly
         all_items = list(Path(path).iterdir())
-
-        # Sort: directories first, then files, alphabetically
-        dirs = sorted([item for item in all_items if item.is_dir()], key=lambda x: x.name.lower())
-        files = sorted([item for item in all_items if item.is_file()], key=lambda x: x.name.lower())
-
-        # Add directories
+        dirs = sorted([i for i in all_items if i.is_dir()], key=lambda x: x.name.lower())
+        files = sorted([i for i in all_items if i.is_file()], key=lambda x: x.name.lower())
         for item in dirs:
-            items.append({
-                'name': item.name,
-                'path': str(item),
-                'type': 'directory',
-                'children': get_directory_tree(str(item), max_depth, current_depth + 1) if current_depth < max_depth - 1 else []
-            })
-
-        # Add files
+            items.append({'name': item.name, 'path': str(item), 'type': 'directory', 'children': get_directory_tree(str(item), max_depth, current_depth + 1) if current_depth < max_depth - 1 else []})
         for item in files:
-            items.append({
-                'name': item.name,
-                'path': str(item),
-                'type': 'file',
-                'size': item.stat().st_size
-            })
-
+            items.append({'name': item.name, 'path': str(item), 'type': 'file', 'size': item.stat().st_size})
         return items
     except PermissionError:
         return []
     except Exception as e:
-        print(f"Error reading {path}: {e}")
+        print(f"Error: {e}")
         return []
 
 @app.route('/')
 def index():
-    """Main page"""
+    global settings, BASE_PATHS, DEFAULT_DESTINATION
+    settings = load_settings()
+    BASE_PATHS = settings.get('base_paths', DEFAULT_SETTINGS['base_paths'])
+    DEFAULT_DESTINATION = settings.get('default_dest', DEFAULT_SETTINGS['default_dest'])
     return render_template('index.html', default_dest=DEFAULT_DESTINATION)
+
+@app.route('/settings', methods=['GET'])
+def settings_page():
+    s = load_settings()
+    return render_template('settings.html', base_paths=s.get('base_paths', []), default_dest=s.get('default_dest', ''))
+
+@app.route('/settings', methods=['POST'])
+def save_settings_route():
+    bp = request.form.get('base_paths', '')
+    dd = request.form.get('default_dest', '')
+    base_paths = [l.strip() for l in bp.splitlines() if l.strip()]
+    new_settings = {'base_paths': base_paths, 'default_dest': dd}
+    try:
+        with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(new_settings, f, indent=2, ensure_ascii=False)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/browse')
 def browse():
-    """Browse directories"""
     path = request.args.get('path', '/')
-
     if path == '/':
-        # Return base paths
-        items = [{'name': p, 'path': p, 'type': 'directory'} for p in BASE_PATHS]
+        items = [{'name': p, 'path': p, 'type': 'directory'} for p in settings.get('base_paths', BASE_PATHS)]
         return jsonify(items)
+    return jsonify(get_directory_tree(path, max_depth=1))
 
-    items = get_directory_tree(path, max_depth=1)
-    return jsonify(items)
+@app.route('/api/browse_all')
+def browse_all():
+    """Parcourir tout le système de fichiers (pour la page settings)"""
+    path = request.args.get('path', '/')
+    try:
+        items = []
+        p = Path(path)
+        if not p.exists():
+            return jsonify([])
+        all_items = list(p.iterdir())
+        dirs = sorted([i for i in all_items if i.is_dir()], key=lambda x: x.name.lower())
+        for d in dirs:
+            items.append({'name': d.name, 'path': str(d), 'type': 'directory'})
+        return jsonify(items)
+    except PermissionError:
+        return jsonify([])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/create_hardlink', methods=['POST'])
 def create_hardlink():
-    """Create a hard link"""
     data = request.json
-    source = data.get('source')
-    destination = data.get('destination')
-
-    if not source or not destination:
-        return jsonify({'success': False, 'error': 'Source and destination required'}), 400
-
-    # Validate paths
-    source_path = Path(source)
-    dest_path = Path(destination)
-
-    if not source_path.exists():
-        return jsonify({'success': False, 'error': 'Source file does not exist'}), 400
-
-    if not source_path.is_file():
-        return jsonify({'success': False, 'error': 'Source must be a file'}), 400
-
-    # Check if on same filesystem
-    source_stat = source_path.stat()
-    dest_parent = dest_path.parent
-
-    if not dest_parent.exists():
-        return jsonify({'success': False, 'error': 'Destination directory does not exist'}), 400
-
-    dest_stat = dest_parent.stat()
-
-    if source_stat.st_dev != dest_stat.st_dev:
-        return jsonify({'success': False, 'error': 'Source and destination must be on the same filesystem'}), 400
-
-    # Create hard link
+    src, dst = data.get('source'), data.get('destination')
+    if not src or not dst:
+        return jsonify({'success': False, 'error': 'Required'}), 400
+    sp, dp = Path(src), Path(dst)
+    if not sp.exists() or not sp.is_file():
+        return jsonify({'success': False, 'error': 'Source invalid'}), 400
+    if not dp.parent.exists():
+        return jsonify({'success': False, 'error': 'Dest dir missing'}), 400
     try:
-        os.link(source, destination)
-
-        # Verify it's a hard link
-        source_inode = source_path.stat().st_ino
-        dest_inode = dest_path.stat().st_ino
-
-        if source_inode == dest_inode:
-            return jsonify({
-                'success': True,
-                'message': f'Hard link created successfully',
-                'inode': source_inode,
-                'link_count': source_path.stat().st_nlink
-            })
-        else:
-            return jsonify({'success': False, 'error': 'Link created but inodes do not match'}), 500
-
+        os.link(src, dst)
+        si = sp.stat().st_ino
+        di = dp.stat().st_ino
+        if si == di:
+            return jsonify({'success': True, 'inode': si, 'link_count': sp.stat().st_nlink})
+        return jsonify({'success': False, 'error': 'Inode mismatch'}), 500
     except FileExistsError:
-        return jsonify({'success': False, 'error': 'Destination file already exists'}), 400
+        return jsonify({'success': False, 'error': 'Dest exists'}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/check_file')
 def check_file():
-    """Check file information"""
     path = request.args.get('path')
-
     if not path:
         return jsonify({'error': 'Path required'}), 400
-
-    file_path = Path(path)
-
-    if not file_path.exists():
-        return jsonify({'error': 'File does not exist'}), 404
-
-    stat = file_path.stat()
-
-    return jsonify({
-        'exists': True,
-        'size': stat.st_size,
-        'inode': stat.st_ino,
-        'link_count': stat.st_nlink,
-        'is_hardlink': stat.st_nlink > 1
-    })
+    fp = Path(path)
+    if not fp.exists():
+        return jsonify({'error': 'Not found'}), 404
+    st = fp.stat()
+    return jsonify({'exists': True, 'size': st.st_size, 'inode': st.st_ino, 'link_count': st.st_nlink, 'is_hardlink': st.st_nlink > 1})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
