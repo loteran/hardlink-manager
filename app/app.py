@@ -126,5 +126,72 @@ def check_file():
     st = fp.stat()
     return jsonify({'exists': True, 'size': st.st_size, 'inode': st.st_ino, 'link_count': st.st_nlink, 'is_hardlink': st.st_nlink > 1})
 
+@app.route('/api/create_hardlinks_batch', methods=['POST'])
+def create_hardlinks_batch():
+    """Créer des hardlinks pour une sélection de fichiers et/ou dossiers"""
+    data = request.json
+    items = data.get('items', [])
+    dst_dir = data.get('dest_dir')
+
+    if not items:
+        return jsonify({'success': False, 'error': 'Aucun élément sélectionné'}), 400
+    if not dst_dir:
+        return jsonify({'success': False, 'error': 'Destination requise'}), 400
+
+    dst_path = Path(dst_dir)
+    if not dst_path.exists() or not dst_path.is_dir():
+        return jsonify({'success': False, 'error': 'Répertoire destination invalide'}), 400
+
+    results = {'success': True, 'created': [], 'skipped': [], 'errors': []}
+
+    def process_file(src_file, dst_base):
+        dst_file = dst_base / src_file.name
+        try:
+            if dst_file.exists():
+                results['skipped'].append({'file': src_file.name, 'reason': 'Existe déjà'})
+                return
+            os.link(str(src_file), str(dst_file))
+            results['created'].append(src_file.name)
+        except Exception as e:
+            results['errors'].append({'file': src_file.name, 'error': str(e)})
+
+    def process_directory(src_dir, dst_base):
+        # Toujours récursif pour les dossiers sélectionnés
+        for item in src_dir.rglob('*'):
+            if item.is_file():
+                rel = item.relative_to(src_dir)
+                dst_file = dst_base / rel
+                dst_file.parent.mkdir(parents=True, exist_ok=True)
+
+                try:
+                    if dst_file.exists():
+                        results['skipped'].append({'file': item.name, 'reason': 'Existe déjà'})
+                        continue
+                    os.link(str(item), str(dst_file))
+                    results['created'].append(item.name)
+                except Exception as e:
+                    results['errors'].append({'file': item.name, 'error': str(e)})
+
+    try:
+        for item in items:
+            src_path = Path(item['path'])
+            if not src_path.exists():
+                results['errors'].append({'file': item['name'], 'error': 'Fichier introuvable'})
+                continue
+
+            if item['type'] == 'file':
+                process_file(src_path, dst_path)
+            elif item['type'] == 'directory':
+                process_directory(src_path, dst_path)
+
+        results['total_created'] = len(results['created'])
+        results['total_skipped'] = len(results['skipped'])
+        results['total_errors'] = len(results['errors'])
+        if results['errors']:
+            results['success'] = False
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

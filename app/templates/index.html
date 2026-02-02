@@ -178,12 +178,26 @@
         </div>
 
         <div class="section">
-            <h2>📁 1. Sélectionner le fichier source</h2>
-            <div class="breadcrumb" id="sourcePath">Parcourir...</div>
+            <h2>📁 1. Sélectionner les sources</h2>
+            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                <div class="breadcrumb" id="sourcePath" style="flex: 1; margin-bottom: 0;">Parcourir...</div>
+                <button class="btn btn-primary" onclick="selectAllVisible()" style="padding: 8px 15px; font-size: 0.9em; background: #17a2b8;">
+                    ☑️ Tout sélectionner
+                </button>
+                <button class="btn btn-primary" onclick="clearSelection()" style="padding: 8px 15px; font-size: 0.9em; background: #6c757d;">
+                    ✖️ Effacer
+                </button>
+            </div>
             <div class="file-browser" id="sourceBrowser">
                 <p>Chargement...</p>
             </div>
-            <input type="text" id="sourceInput" placeholder="Ou entrez le chemin complet du fichier source" style="margin-top: 10px;">
+                        <div id="selectionSummary" style="margin-top: 10px; padding: 10px; background: #e7f3ff; border-radius: 5px; display: none;">
+                <strong>Sélection :</strong> <span id="selectionCount">0</span> élément(s)
+                <div id="selectionList" style="margin-top: 5px; font-size: 0.85em; color: #495057; max-height: 80px; overflow-y: auto;"></div>
+            </div>
+            <p style="margin-top: 10px; color: #6c757d; font-size: 0.9em;">
+                💡 Cochez les fichiers et/ou dossiers à traiter. Double-cliquez sur un dossier pour y entrer.
+            </p>
         </div>
 
         <div class="section">
@@ -208,7 +222,7 @@
 
         <div class="button-group">
             <button class="btn btn-primary" id="createBtn" onclick="createHardLink()">
-                🔗 Créer le Hard Link
+                🔗 Créer le(s) Hard Link(s)
             </button>
         </div>
 
@@ -224,7 +238,7 @@
 
         let currentSourcePath = '/';
         let currentDestPath = '/';
-        let selectedFile = null;
+        let selectedItems = []; // {path: string, type: 'file'|'directory', name: string}
         let selectedDestDir = '{{ default_dest }}';
 
         async function loadSourceDirectory(path) {
@@ -249,15 +263,38 @@
                 items.forEach(item => {
                     const itemDiv = document.createElement('div');
                     itemDiv.className = 'file-item';
+                    itemDiv.style.display = 'flex';
+                    itemDiv.style.alignItems = 'center';
+
+                    const isSelected = selectedItems.some(s => s.path === item.path);
                     const icon = item.type === 'directory' ? '📁' : '📄';
                     const sizeInfo = item.size ? ` (${formatSize(item.size)})` : '';
-                    itemDiv.innerHTML = `<span class="file-icon">${icon}</span> ${item.name}${sizeInfo}`;
 
-                    itemDiv.onclick = () => {
+                    itemDiv.innerHTML = `
+                        <input type="checkbox" class="item-checkbox" data-path="${item.path}" data-type="${item.type}" data-name="${item.name}"
+                            ${isSelected ? 'checked' : ''} style="width: 18px; height: 18px; margin-right: 10px; cursor: pointer;">
+                        <span class="file-icon">${icon}</span>
+                        <span class="item-name">${item.name}${sizeInfo}</span>
+                    `;
+
+                    const checkbox = itemDiv.querySelector('.item-checkbox');
+                    checkbox.onclick = (e) => {
+                        e.stopPropagation();
+                        toggleSelection(item.path, item.type, item.name, checkbox.checked);
+                    };
+
+                    // Double-clic pour entrer dans un dossier
+                    itemDiv.ondblclick = () => {
                         if (item.type === 'directory') {
                             loadSourceDirectory(item.path);
-                        } else {
-                            selectFile(item.path, itemDiv);
+                        }
+                    };
+
+                    // Simple clic pour cocher/décocher
+                    itemDiv.onclick = (e) => {
+                        if (e.target.type !== 'checkbox') {
+                            checkbox.checked = !checkbox.checked;
+                            toggleSelection(item.path, item.type, item.name, checkbox.checked);
                         }
                     };
 
@@ -271,6 +308,60 @@
                 console.error('Error loading source directory:', error);
                 showMessage('Erreur lors du chargement du répertoire', 'error');
             }
+        }
+
+        function toggleSelection(path, type, name, isSelected) {
+            if (isSelected) {
+                if (!selectedItems.some(s => s.path === path)) {
+                    selectedItems.push({ path, type, name });
+                }
+            } else {
+                selectedItems = selectedItems.filter(s => s.path !== path);
+            }
+            updateSelectionSummary();
+        }
+
+        function selectAllVisible() {
+            const checkboxes = document.querySelectorAll('#sourceBrowser .item-checkbox');
+            checkboxes.forEach(cb => {
+                if (!cb.checked) {
+                    cb.checked = true;
+                    toggleSelection(cb.dataset.path, cb.dataset.type, cb.dataset.name, true);
+                }
+            });
+        }
+
+        function clearSelection() {
+            selectedItems = [];
+            const checkboxes = document.querySelectorAll('#sourceBrowser .item-checkbox');
+            checkboxes.forEach(cb => cb.checked = false);
+            updateSelectionSummary();
+        }
+
+        function updateSelectionSummary() {
+            const summaryDiv = document.getElementById('selectionSummary');
+            const countSpan = document.getElementById('selectionCount');
+            const listDiv = document.getElementById('selectionList');
+
+            if (selectedItems.length === 0) {
+                summaryDiv.style.display = 'none';
+                return;
+            }
+
+            summaryDiv.style.display = 'block';
+            countSpan.textContent = selectedItems.length;
+
+            const dirs = selectedItems.filter(s => s.type === 'directory');
+            const files = selectedItems.filter(s => s.type === 'file');
+
+            let html = '';
+            if (dirs.length > 0) {
+                html += `📁 ${dirs.length} dossier(s): ${dirs.map(d => d.name).join(', ')}<br>`;
+            }
+            if (files.length > 0) {
+                html += `📄 ${files.length} fichier(s): ${files.map(f => f.name).join(', ')}`;
+            }
+            listDiv.innerHTML = html;
         }
 
         async function loadDestDirectory(path) {
@@ -320,17 +411,6 @@
             }
         }
 
-        function selectFile(path, element) {
-            document.querySelectorAll('#sourceBrowser .file-item').forEach(item => {
-                item.classList.remove('selected');
-            });
-
-            element.classList.add('selected');
-            selectedFile = path;
-            document.getElementById('sourceInput').value = path;
-            updateFinalPath();
-        }
-
         function selectDestDir(path) {
             selectedDestDir = path;
             document.getElementById('destinationInput').value = path;
@@ -347,53 +427,71 @@
         }
 
         function updateFinalPath() {
-            if (selectedFile && selectedDestDir) {
-                const filename = selectedFile.split('/').pop();
-                const finalPath = selectedDestDir + '/' + filename;
-                document.getElementById('finalPathText').textContent = finalPath;
-                document.getElementById('finalPath').style.display = 'block';
+            const finalPathEl = document.getElementById('finalPath');
+            const finalPathText = document.getElementById('finalPathText');
+
+            if (selectedItems.length > 0 && selectedDestDir) {
+                finalPathText.textContent = `${selectedDestDir}/ (${selectedItems.length} élément(s) sélectionné(s))`;
+                finalPathEl.style.display = 'block';
+            } else {
+                finalPathEl.style.display = 'none';
             }
         }
 
         async function createHardLink() {
-            const source = document.getElementById('sourceInput').value;
             const destDir = document.getElementById('destinationInput').value;
 
-            if (!source || !destDir) {
-                showMessage('Veuillez sélectionner un fichier source et un répertoire de destination', 'error');
+            if (selectedItems.length === 0) {
+                showMessage('Veuillez sélectionner au moins un fichier ou dossier source', 'error');
                 return;
             }
 
-            // Construct full destination path
-            const filename = source.split('/').pop();
-            const destination = destDir + '/' + filename;
+            if (!destDir) {
+                showMessage('Veuillez sélectionner un répertoire de destination', 'error');
+                return;
+            }
 
             const btn = document.getElementById('createBtn');
             btn.disabled = true;
             btn.textContent = '⏳ Création en cours...';
 
             try {
-                const response = await fetch(`${basePath}/api/create_hardlink`, {
+                const response = await fetch(`${basePath}/api/create_hardlinks_batch`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ source, destination })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        items: selectedItems,
+                        dest_dir: destDir
+                    })
                 });
 
                 const result = await response.json();
 
-                if (result.success) {
-                    showMessage(`✅ Hard link créé avec succès! Inode: ${result.inode}, Liens: ${result.link_count}`, 'success');
-                } else {
+                if (result.total_created > 0 || result.total_skipped > 0) {
+                    let msg = `✅ ${result.total_created} hardlink(s) créé(s)`;
+                    if (result.total_skipped > 0) {
+                        msg += `, ${result.total_skipped} ignoré(s)`;
+                    }
+                    if (result.total_errors > 0) {
+                        msg += `, ${result.total_errors} erreur(s)`;
+                    }
+                    showMessage(msg, result.total_errors > 0 ? 'error' : 'success');
+
+                    // Vider la sélection après succès
+                    if (result.total_errors === 0) {
+                        clearSelection();
+                    }
+                } else if (result.error) {
                     showMessage(`❌ Erreur: ${result.error}`, 'error');
+                } else {
+                    showMessage('⚠️ Aucun fichier à traiter', 'error');
                 }
 
             } catch (error) {
                 showMessage(`❌ Erreur: ${error.message}`, 'error');
             } finally {
                 btn.disabled = false;
-                btn.textContent = '🔗 Créer le Hard Link';
+                btn.textContent = '🔗 Créer le(s) Hard Link(s)';
             }
         }
 
@@ -418,12 +516,6 @@
         // Écouteur pour le champ de destination
         document.getElementById('destinationInput').addEventListener('input', function() {
             selectedDestDir = this.value;
-            updateFinalPath();
-        });
-
-        // Écouteur pour le champ source
-        document.getElementById('sourceInput').addEventListener('input', function() {
-            selectedFile = this.value;
             updateFinalPath();
         });
 
